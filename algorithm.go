@@ -1,9 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
-	"sort"
+
 	"time"
 )
 
@@ -13,67 +14,103 @@ type minEl struct {
 	W float64
 	D float64
 	alpha []float64
+	yFiltered []float64
 	distance float64
 }
 
-func getMinWeight(inputData map[string]float64, noiseFunc []float64) []float64 {
-	N := math.Log(1 - inputData["prob"])/
-		math.Log(1 - (inputData["eps"]/(inputData["xMax"] - inputData["xMin"])))
-	M := (inputData["r"] - 1) / 2
-	yFilteredPoints := make(map[float64][]float64)
-	minElSlice := make([]minEl, 0)
-	for weight := 0.0; weight <= 1.0; weight += 0.1 {
-		var Jmin float64
-		Jmin = 1000
-		var noisinessMin float64
-		var differencesMin float64
-		var alphaMin []float64
-		for i := 0; i < int(N); i++ {
-			filterFunc := make([]float64, 100)
-			alpha := getAlpha(inputData["r"])
-			for k := M; k < 100 - M; k++ {
-				var multiplication float64
-				multiplication = 1
-				for j := k - M; j < k + M; j++ {
-					multiplication *= math.Pow(noiseFunc[int(j)], alpha[int(j + M + 1 - k)])
-				}
-				filterFunc[int(k)] = multiplication
-			}
-			noisiness := getNoisiness(filterFunc)
-			differences := getDifferences(filterFunc, noiseFunc)
-			J := getJ(weight, noisiness, differences)
-			if J < Jmin {
-				Jmin = J
-				noisinessMin = noisiness
-				differencesMin = differences
-				alphaMin = alpha
-				yFilteredPoints[weight] = filterFunc
-			}
+func coordinateSignal(K float64, input map[string]float64) []float64 {
+	xPoints := make([]float64, int(K))
+	var i float64
+	for i = 0; i < 100; i++ {
+		xPoints[int(i)] = input["xMin"] + (i * (input["xMax"] - input["xMin"]))/K
+	}
+	return xPoints
+}
+
+func getFiltered (input map[string]float64, noiseFunc []float64) minEl {
+	minimal := minEl{
+		distance: 1000,
+	}
+	filtered := make(map[float64]minEl)
+	for lambda := 0.0; lambda <= 1; lambda += 0.1 {
+		filtered[lambda] = getWeights(input, noiseFunc, lambda)
+		fmt.Println("weight: ", lambda)
+		fmt.Println("alpha: ", filtered[lambda].alpha)
+		fmt.Println("W: ", filtered[lambda].W)
+		fmt.Println("D: ", filtered[lambda].D)
+		fmt.Println("dist: ", filtered[lambda].distance)
+		fmt.Println("-------------------------------------------------------------------------------------------------")
+		if minimal.distance > filtered[lambda].distance {
+			minimal = filtered[lambda]
 		}
-		distance := math.Abs(noisinessMin) + math.Abs(differencesMin)
-		minElSlice = append(minElSlice, minEl{weight, Jmin, noisinessMin, differencesMin, alphaMin, distance})
 	}
-	sort.Slice(minElSlice, func(i, j int) bool {
-		return minElSlice[i].distance < minElSlice[j].distance
-	})
-
-	return yFilteredPoints[minElSlice[0].weight]
+	fmt.Println("MINIMAL")
+	fmt.Println("weight: ", minimal.weight)
+	fmt.Println("alpha: ", minimal.alpha)
+	fmt.Println("W: ", minimal.W)
+	fmt.Println("D: ", minimal.D)
+	fmt.Println("dist: ", minimal.distance)
+	return minimal
 }
 
-func getNoisiness(filterFunc []float64) float64 {
-	var sum float64
-	for k := 1; k < 100; k++ {
-		sum += math.Abs(filterFunc[k] - filterFunc[k - 1])
+func getWeights(input map[string]float64, noiseFunc []float64, lambda float64) minEl {
+	N := math.Log(1 - input["P"])/
+		 math.Log(1 - (input["e"]/(input["xMax"] - input["xMin"])))
+	yFiltered := make([]float64, 101)
+	min := minEl{
+		J : 1000.1,
 	}
-	return sum
+	for i := 0; i <= int(N); i++ {
+		alpha := getAlpha(input["r"])
+		yFiltered = filteredSignal(alpha, input["K"], input["r"], noiseFunc)
+		W := getNoisiness(yFiltered, input["K"])
+		D := getDifferences(yFiltered, noiseFunc, input["K"])
+		J := getJ(lambda, min.W, min.D)
+		if min.J > J {
+			min.J = J
+			min.W = W
+			min.D = D
+			min.yFiltered = yFiltered
+			min.alpha = alpha
+			min.weight = lambda
+			min.distance = math.Abs(min.W) + math.Abs(min.D)
+		}
+	}
+	return min
 }
 
-func getDifferences(filterFunc []float64, noiseFunc []float64) float64 {
+func filteredSignal(alpha []float64, K float64, r float64, noiseFunc []float64) []float64 {
+	M := (r - 1)/2
+	yFiltered := make([]float64, int(K) + 1)
+	for k := 0; k <= int(M); k++ {
+		yFiltered[k] = noiseFunc[k]
+		yFiltered[int(K) - k - 1] = noiseFunc[int(K) - k - 1]
+	}
+	var composition float64
+	for k := M; k <= K - M; k++ {
+		composition = 1
+		for j := k - M; j <= k + M; j++ {
+			composition *= math.Pow(noiseFunc[int(j)], alpha[int(j + M - k)])
+		}
+		yFiltered[int(k)] = composition
+	}
+	return yFiltered
+}
+
+func getNoisiness(filterFunc []float64, K float64) float64 {
+	var noisiness float64
+	for k := 1; k < int(K); k++ {
+		noisiness += math.Abs(filterFunc[k] - filterFunc[k - 1])
+	}
+	return noisiness
+}
+
+func getDifferences(filterFunc []float64, noiseFunc []float64, K float64) float64 {
 	var differences float64
-	for k := 0; k < 100; k++ {
+	for k := 0; k < int(K); k++ {
 		differences += math.Abs(filterFunc[k] - noiseFunc[k])
 	}
-	return differences/100
+	return differences/K
 }
 
 func getJ(weight float64, noisiness float64, differences float64) float64 {
