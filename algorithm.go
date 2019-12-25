@@ -38,6 +38,7 @@ func getFiltered (input map[string]float64, noiseFunc []float64) minEl {
 		fmt.Println("alpha: ", filtered[lambda].alpha)
 		fmt.Println("W: ", filtered[lambda].W)
 		fmt.Println("D: ", filtered[lambda].D)
+		fmt.Println("J: ", filtered[lambda].J)
 		fmt.Println("dist: ", filtered[lambda].distance)
 		fmt.Println("-------------------------------------------------------------------------------------------------")
 		if minimal.distance > filtered[lambda].distance {
@@ -49,6 +50,7 @@ func getFiltered (input map[string]float64, noiseFunc []float64) minEl {
 	fmt.Println("alpha: ", minimal.alpha)
 	fmt.Println("W: ", minimal.W)
 	fmt.Println("D: ", minimal.D)
+	fmt.Println("J: ", minimal.J)
 	fmt.Println("dist: ", minimal.distance)
 	return minimal
 }
@@ -65,7 +67,7 @@ func getWeights(input map[string]float64, noiseFunc []float64, lambda float64) m
 		yFiltered = filteredSignal(alpha, input["K"], input["r"], noiseFunc)
 		W := getNoisiness(yFiltered, input["K"])
 		D := getDifferences(yFiltered, noiseFunc, input["K"])
-		J := getJ(lambda, min.W, min.D)
+		J := getJ(lambda, W, D)
 		if min.J > J {
 			min.J = J
 			min.W = W
